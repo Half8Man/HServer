@@ -2,9 +2,10 @@
 // Created by wangj on 2020/6/11.
 //
 
-#include <iostream>
+#include "net/MainServer.h"
 
 int main() {
-	std::cout << "HServer" << std::endl;
+	MainServer main_server;
+	main_server.Start(4, 16);
 	return 0;
 }

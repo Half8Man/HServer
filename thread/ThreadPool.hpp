@@ -15,6 +15,8 @@
 #include <functional>
 #include <stdexcept>
 
+typedef std::function<void()> task_t;
+
 class ThreadPool {
 public:
 	explicit ThreadPool(size_t);
@@ -27,7 +29,7 @@ public:
 
 private:
 	std::vector<std::thread> workers;
-	std::queue<std::function<void()> > tasks;
+	std::queue<task_t> tasks;
 
 	std::mutex queue_mutex;
 	std::condition_variable condition;
@@ -40,7 +42,7 @@ inline ThreadPool::ThreadPool(size_t threads)
 		workers.emplace_back(
 				[this] {
 					for (;;) {
-						std::function<void()> task;
+						task_t task;
 
 						{
 							std::unique_lock<std::mutex> lock(this->queue_mutex);
