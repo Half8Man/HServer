@@ -5,12 +5,14 @@
 #ifndef HSERVER_CELLCLIENT_H
 #define HSERVER_CELLCLIENT_H
 
+#include <mutex>
+#include <atomic>
+
 #include "BaseEvent.hpp"
+#include "warp.h"
+#include "ThreadPool.hpp"
 
-#include "../utils/warp.h"
-#include "../thread/ThreadPool.hpp"
-
-class MainServer;
+class CellServer;
 
 struct DataHeader;
 
@@ -18,17 +20,17 @@ class CellClient : public BaseEvent {
 public:
 	CellClient() = delete;
 
-	CellClient(int ep_fd, int fd, MainServer *main_server);
+	CellClient(int ep_fd, int fd, CellServer *cell_server);
 
 	~CellClient() override;
 
-	inline int SockFd() const;
+	int SockFd() const;
 
-	inline int Event() const;
+	int Event() const;
 
-	inline time_t LastTime() const;
+	time_t LastTime() const;
 
-	inline void SetNonBlock() const;
+	void SetNonBlock() const;
 
 	void Reset(EventCallback callback);
 
@@ -36,7 +38,7 @@ public:
 
 	void DelFromTree(int ep_fd);
 
-	static void OnNetMsg(DataHeader *header);
+	void OnNetMsg(DataHeader *header);
 
 	void RecvData();
 
@@ -46,13 +48,21 @@ public:
 
 	void AddTask(const task_t &task);
 
+	void Send(DataHeader *header);
+
+	size_t MsgCount();
+
+	void ResetMsgCount(size_t old_count);
+
 private:
 	time_t last_time_;
 	int recv_buf_len_;
 	int send_buf_len_;
 	char recv_buf_[BUFSIZ]{};
 	char send_buf_[BUFSIZ]{};
-	MainServer *main_server_;
+	CellServer *cell_server_;
+	std::atomic_int msg_count_{};
+	std::mutex send_buf_mutex_;
 };
 
 

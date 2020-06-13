@@ -7,7 +7,7 @@
 
 #include <unordered_map>
 
-#include "../utils/Singleton.hpp"
+#include "Singleton.hpp"
 #include "MemoryPool.hpp"
 
 #define MAX_MEMORY_SZIE 128

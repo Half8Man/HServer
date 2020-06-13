@@ -2,6 +2,7 @@
 // Created by wangj on 2020/6/11.
 //
 
+#include <cstdio>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <strings.h>
@@ -24,6 +25,8 @@ MainServer::~MainServer() {
 }
 
 void MainServer::Start(size_t cell_server_count, size_t thread_pool_size) {
+	printf("主服务开始启动...\n");
+
 	InitSocket(svr_port);
 
 	// 创建线程池，负责处理业务逻辑
@@ -32,7 +35,7 @@ void MainServer::Start(size_t cell_server_count, size_t thread_pool_size) {
 
 	// 创建cell_server，负责接收数据、发送数据
 	for (size_t i = 0; i < cell_server_count; ++i) {
-		auto *cell_server = new CellServer(sock_fd_, i + 1);
+		auto *cell_server = new CellServer(sock_fd_, i + 1, this);
 		cell_server_vec_.emplace_back(cell_server);
 		cell_server->Start();
 	}
@@ -50,9 +53,18 @@ void MainServer::Start(size_t cell_server_count, size_t thread_pool_size) {
 			);
 		}
 	}
+
+	printf("主服务启动完成...\n");
 }
 
 void MainServer::InitSocket(unsigned short port) {
+	// 创建 epoll_fd
+	epoll_fd_ = epoll_create(max_event_count);
+	if (epoll_fd_ <= 0) {
+		printf("epoll_create error\n");
+		return;
+	}
+
 	// 创建socket
 	sock_fd_ = Socket(AF_INET, SOCK_STREAM, 0);
 
@@ -73,15 +85,10 @@ void MainServer::InitSocket(unsigned short port) {
 }
 
 void MainServer::Run(CellThread *cell_thread) {
-	epoll_fd_ = epoll_create(max_event_count);
-	if (epoll_fd_ <= 0) {
-		printf("epoll_create error\n");
-		return;
-	}
-
 	while (cell_thread->IsRun()) {
+		Time4Pkg();
 		// 监听
-		int count = epoll_wait(epoll_fd_, epoll_events_, max_event_count, 500);
+		int count = epoll_wait(epoll_fd_, epoll_events_, max_event_count, 0);
 		if (count < 0) {
 			printf("epoll_wait error\n");
 			break;
@@ -142,13 +149,12 @@ void MainServer::AcceptConnect() {
 	socklen_t client_addr_len;
 	int client_fd = Accept(sock_fd_, (sockaddr *) &client_addr, &client_addr_len);
 
-	auto new_client = new CellClient(epoll_fd_, client_fd, this);
-	AddClient2CellSvr(new_client);
+	AddClient2CellSvr(client_fd);
 
 	char ip[BUFSIZ]{};
 	printf("new client connect, addrs:[%s:%d], fd[%d], time[%ld]\n",
 	       inet_ntop(AF_INET, &client_addr.sin_addr, ip, sizeof(ip)), ntohs(client_addr.sin_port),
-	       client_fd, new_client->LastTime()
+	       client_fd, time(nullptr)
 	);
 }
 
@@ -184,8 +190,8 @@ void MainServer::DelFromTree() {
 	status_ = false;
 }
 
-void MainServer::AddClient2CellSvr(CellClient *cell_client) {
-	if (cell_client) {
+void MainServer::AddClient2CellSvr(int sock_fd) {
+	if (sock_fd != kInvalidSocket) {
 		// 查找客户端数量最小的CellServer
 		auto min_server = cell_server_vec_[0];
 		for (auto cell_server : cell_server_vec_) {
@@ -193,7 +199,7 @@ void MainServer::AddClient2CellSvr(CellClient *cell_client) {
 				min_server = cell_server;
 			}
 		}
-		min_server->AddClient(cell_client);
+		min_server->AddClient(sock_fd);
 	}
 }
 
@@ -201,5 +207,17 @@ void MainServer::AddTask(const task_t &task) {
 	if (thread_pool_) {
 		auto ret = thread_pool_->enqueue(task);
 		ret.get();
+	}
+}
+
+void MainServer::Time4Pkg() {
+	auto time_temp = time_stamp_.GetElapsedSecond();
+	if (time_temp >= 1.0) {
+		size_t total = 0;
+		for (const auto &cell_server : cell_server_vec_) {
+			total += cell_server->CalcMsgCount();
+		}
+		printf("时间:%lf, msg数量:%zu\n", time_temp, total);
+		time_stamp_.Update();
 	}
 }

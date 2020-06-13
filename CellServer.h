@@ -11,11 +11,13 @@
 #include <sys/epoll.h>
 
 #include "BaseEvent.hpp"
-#include "../thread/CellThread.hpp"
-#include "../thread/ThreadPool.hpp"
+#include "CellThread.hpp"
+#include "ThreadPool.hpp"
 
 const size_t max_event_count = 1024;
 const unsigned short svr_port = 8888;
+
+class MainServer;
 
 class CellClient;
 
@@ -23,7 +25,7 @@ class CellServer : public BaseEvent {
 public:
 	CellServer() = delete;
 
-	CellServer(int sock_fd, int server_id);
+	CellServer(int sock_fd, int server_id, MainServer *main_server);
 
 	virtual ~CellServer();
 
@@ -35,14 +37,19 @@ public:
 
 	int GetClientCount();
 
-	void AddClient(CellClient *cell_client);
+	void AddClient(int sock_fd);
 
 	void DelClient(int sock_fd);
 
 	void ClearClients();
 
+	void AddTask(const task_t &task);
+
+	size_t CalcMsgCount();
+
 private:
 	int server_id_; // server id
+	MainServer *main_server_;
 	CellThread *cell_thread_;
 	epoll_event epoll_events_[max_event_count]{}; // 事件数组 // todo 宏定义
 	std::unordered_map<int, CellClient *> client_map_{}; // 正式客户端map

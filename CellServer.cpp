@@ -3,10 +3,14 @@
 //
 
 #include "CellServer.h"
+#include "MainServer.h"
 #include "CellClient.h"
 
-CellServer::CellServer(int sock_fd, int server_id) : BaseEvent(ObjType::kCellServer), server_id_(server_id),
-                                                     cell_thread_(nullptr) {
+CellServer::CellServer(int sock_fd, int server_id, MainServer *main_server)
+		: BaseEvent(ObjType::kCellServer),
+		  server_id_(server_id),
+		  main_server_(main_server),
+		  cell_thread_(nullptr) {
 	sock_fd_ = sock_fd;
 }
 
@@ -16,6 +20,8 @@ CellServer::~CellServer() {
 }
 
 void CellServer::Start() {
+	printf("收发服务%d开始启动...\n", server_id_);
+
 	if (!cell_thread_) {
 		cell_thread_ = new CellThread();
 		if (cell_thread_) {
@@ -29,6 +35,8 @@ void CellServer::Start() {
 					});
 		}
 	}
+
+	printf("收发服务%d启动完成...\n", server_id_);
 }
 
 void CellServer::Run(CellThread *cell_thread) {
@@ -58,7 +66,7 @@ void CellServer::Run(CellThread *cell_thread) {
 		}
 
 		// 监听
-		int count = epoll_wait(epoll_fd_, epoll_events_, max_event_count, 500);
+		int count = epoll_wait(epoll_fd_, epoll_events_, max_event_count, 0);
 		if (count < 0) {
 			printf("epoll_wait error\n");
 			break;
@@ -108,11 +116,11 @@ int CellServer::GetClientCount() {
 	return client_map_.size() + client_buf_map_.size();
 }
 
-void CellServer::AddClient(CellClient *cell_client) {
-	if (cell_client) {
-		std::lock_guard<std::mutex> lock(client_mutex_);
-		client_buf_map_[cell_client->SockFd()] = cell_client;
-	}
+void CellServer::AddClient(int sock_fd) {
+	auto new_client = new CellClient(epoll_fd_, sock_fd, this);
+
+	std::lock_guard<std::mutex> lock(client_mutex_);
+	client_buf_map_[sock_fd] = new_client;
 }
 
 void CellServer::DelClient(int sock_fd) {
@@ -145,4 +153,24 @@ void CellServer::ClearClients() {
 		}
 	}
 	client_map_.clear();
+}
+
+void CellServer::AddTask(const task_t &task) {
+	if (main_server_)
+		main_server_->AddTask(task);
+}
+
+size_t CellServer::CalcMsgCount() {
+	size_t total = 0;
+	if (!client_map_.empty()) {
+		std::lock_guard<std::mutex> lock(client_mutex_);
+		for (const auto &iter : client_map_) {
+			auto cell_client = iter.second;
+			auto count = cell_client->MsgCount();
+			total += count;
+			cell_client->ResetMsgCount(count);
+		}
+	}
+
+	return total;
 }
